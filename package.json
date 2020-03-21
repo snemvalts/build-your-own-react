@@ -1,0 +1,20 @@
+{
+  "name": "build-your-own-react",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/snemvalts/build-your-own-react.git",
+  "author": "Sander Nemvalts <snemvalts@gmail.com>",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "dev": "mkdir -p dist/ && cp src/index.html dist/index.html && (webpack --watch & cd dist/ && python3 -m http.server)"
+  },
+  "dependencies": {
+    "typescript": "^3.8.3"
+  },
+  "devDependencies": {
+    "ts-loader": "^6.2.1",
+    "webpack": "^4.42.0",
+    "webpack-cli": "^3.3.11"
+  }
+}
