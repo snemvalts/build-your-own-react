@@ -1,12 +1,21 @@
 const path = require('path');
 
 module.exports = {
-    entry: './src/main.ts',
+    mode: 'development',
+    entry: './src/main.tsx',
     module: {
         rules: [
             {
-                test: /\.ts$/,
-                use: 'ts-loader',
+                test: /\.tsx?$/,
+                use: [
+                    {
+                        loader: 'babel-loader',
+                        options: {}
+                    },
+                    {
+                        loader: 'ts-loader'
+                    },
+                 ],
                 exclude: /node_modules/,
             },
         ],
