@@ -4,7 +4,7 @@ class Leact {
   currentRoot: Fiber = null;
 
   constructor() {
-    (window as any).requestIdleCallback(this.workLoop);
+    (window as any).requestIdleCallback(this.workLoop.bind(this));
   }
 
 
@@ -21,7 +21,7 @@ class Leact {
       this.commitRoot();
     }
 
-    (window as any).requestIdleCallback(this.workLoop);
+    (window as any).requestIdleCallback(this.workLoop.bind(this));
   }
 
   private commitRoot() {
