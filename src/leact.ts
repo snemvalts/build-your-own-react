@@ -2,6 +2,7 @@ class Leact {
   nextUnitOfWork: any = null;
   wipRoot: Fiber = null;
   currentRoot: Fiber = null;
+  deletions: Fiber[] = null;
 
   constructor() {
     (window as any).requestIdleCallback(this.workLoop.bind(this));
@@ -24,7 +25,61 @@ class Leact {
     (window as any).requestIdleCallback(this.workLoop.bind(this));
   }
 
+  private updateDom(dom: HTMLElement | Text, prevProps: {children: (LeactElement)[], [key:string] : any }, nextProps: {children: (LeactElement)[], [key:string] : any }) {
+    const isEvent = (key: string) => key.startsWith('on');
+    const isProperty = (key: string) =>
+      key !== 'children' && !isEvent(key);
+    const isNew = (prev: {[key:string]: any}, next: {[key:string]: any}) => (key: string) =>
+      prev[key] !== next[key];
+    const isGone = (prev: {[key:string]: any}, next: {[key:string]: any}) => (key:string) => !(key in next);
+
+    // old event handlers - if changed remove from node
+    Object.keys(prevProps)
+      .filter(isEvent)
+      .filter(
+        key => !(key in nextProps) || isNew(prevProps, nextProps)(key)
+      )
+      .forEach(name => {
+        const eventType = name.toLowerCase().substring(2);
+        dom.removeEventListener(
+          eventType,
+          prevProps[name]
+        );
+      });
+
+    // get rid of old properties
+    Object.keys(prevProps)
+      .filter(isProperty)
+      .filter(isGone(prevProps, nextProps))
+      .forEach(name => {
+        dom[name] = '';
+      });
+
+    // set new or changed properties
+    Object.keys(nextProps)
+      .filter(isProperty)
+      .filter(isNew(prevProps,nextProps))
+      .forEach(name => {
+        dom[name] = '';
+      });
+
+    // add new event handlers
+    Object.keys(prevProps)
+      .filter(isEvent)
+      .filter(
+        key => !(key in nextProps) || isNew(prevProps, nextProps)(key)
+      )
+      .forEach(name => {
+        const eventType = name.toLowerCase().substring(2);
+        dom.removeEventListener(
+          eventType,
+          prevProps[name]
+        );
+      });
+  }
+
   private commitRoot() {
+    this.deletions.forEach(this.commitWork);
     this.commitWork(this.wipRoot.child);
     this.currentRoot = this.wipRoot;
     this.wipRoot = null;
@@ -35,6 +90,15 @@ class Leact {
       return;
     }
     const domParent = fiber.parent.dom;
+
+    if (fiber.effectTag === 'PLACEMENT' && fiber.dom !== null) {
+      domParent.appendChild(fiber.dom);
+    } else if (fiber.effectTag === 'DELETION') {
+      domParent.removeChild(fiber.dom);
+    } else if (fiber.effectTag === 'UPDATE' && fiber.dom !== null) {
+      this.updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+    }
+
     domParent.appendChild(fiber.dom);
     this.commitWork(fiber.child);
     this.commitWork(fiber.sibling);
@@ -46,28 +110,7 @@ class Leact {
     }
 
     const elements = fiber.props.children;
-    let index = 0;
-    let prevSibling: Fiber = null;
-
-    while (index < elements.length) {
-      const element = elements[index];
-
-      const newFiber: Fiber = {
-        type: element.type,
-        props: element.props,
-        parent: fiber,
-        dom: null,
-      };
-
-      if (index === 0) {
-        fiber.child = newFiber;
-      } else {
-        prevSibling.sibling = newFiber;
-      }
-
-      prevSibling = newFiber;
-      index++;
-    }
+    this.reconcileChildren(fiber, elements);
 
     if (fiber.child) {
       return fiber.child;
@@ -79,6 +122,56 @@ class Leact {
         return nextFiber.sibling;
       }
       nextFiber = nextFiber.parent;
+    }
+  }
+
+  private reconcileChildren(wipFiber: Fiber, elements: LeactElement[]) {
+    let index = 0;
+    let oldFiber = wipFiber.alternate && wipFiber.alternate.child;
+    let prevSibling: Fiber = null;
+
+    // TODO: non strict equals?
+    while (index < elements.length || oldFiber !== null) {
+      const element = elements[index];
+      let newFiber: Fiber = null;
+
+      const sameType = oldFiber && element && element.type === oldFiber.type;
+
+      if (sameType) {
+        newFiber = {
+          type: oldFiber.type,
+          props: element.props,
+          dom: oldFiber.dom,
+          parent: wipFiber,
+          alternate: oldFiber,
+          effectTag: 'UPDATE',
+        };
+      }
+
+      if (element && !sameType) {
+        newFiber = {
+          type: element.type,
+          props: element.props,
+          dom: null,
+          parent: wipFiber,
+          alternate: null,
+          effectTag: 'PLACEMENT',
+        }
+      }
+
+      if (oldFiber && !sameType) {
+        oldFiber.effectTag = 'DELETION';
+        this.deletions.push(oldFiber);
+      }
+
+      if (index === 0) {
+        wipFiber.child = newFiber;
+      } else if (element) {
+        prevSibling.sibling = newFiber;
+      }
+
+      prevSibling = newFiber;
+      index++;
     }
   }
 
@@ -124,6 +217,7 @@ class Leact {
       },
       alternate: this.currentRoot
     };
+    this.deletions = [];
     this.nextUnitOfWork = this.wipRoot;
   }
 }
@@ -133,10 +227,13 @@ interface Fiber {
   props: {children: (LeactElement)[], [key:string] : any };
   dom: HTMLElement | Text;
   type?: string;
+  // props for the traversing and rendering
   parent?: Fiber;
   sibling?: Fiber;
   child?: Fiber;
+  // previous version of fiber that we sent off to dom
   alternate?: Fiber;
+  effectTag?: 'UPDATE' | 'PLACEMENT' | 'DELETION';
 }
 
 export interface LeactElement {
